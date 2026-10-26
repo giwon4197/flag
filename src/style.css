@@ -1,4 +1,5 @@
 :root{font-family:'Noto Sans KR',system-ui,sans-serif;color:#fff;background:#0d1523;font-synthesis:none;font-weight:400;color-scheme:dark}
+#auto-countdown{font-size:76px;line-height:1.15;font-weight:900;color:#bad2ff;font-variant-numeric:tabular-nums;margin:14px auto;text-shadow:0 0 35px #477df580}#auto-countdown:not([hidden])~#start{display:none}
 .duration-control{font-size:11px;color:#c6d6eb;white-space:nowrap;display:flex;align-items:center;gap:6px}.duration-control input{width:70px;border:1px solid #ffffff32;border-radius:8px;background:#13213a;color:#fff;padding:7px;font:inherit}.duration-control input:disabled{opacity:.5}
 *{box-sizing:border-box}body{margin:0}button{font:inherit;cursor:pointer}button:disabled{cursor:not-allowed;opacity:.4}button:focus-visible{outline:3px solid #ffcf6d;outline-offset:5px}[hidden]{display:none!important}
 .arena{position:relative;isolation:isolate;width:100%;height:100svh;min-height:580px;overflow:hidden;background:radial-gradient(ellipse at 50% 45%,#273e5a,#0d1523 75%)}

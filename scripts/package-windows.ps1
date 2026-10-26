@@ -1,4 +1,4 @@
-param([string]$Version = '1.1.0')
+param([ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '1.1.1')
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $projectRoot
@@ -31,7 +31,11 @@ foreach ($packageName in @('@mediapipe/tasks-vision','vite')) {
     }
 }
 if ((Test-Path -LiteralPath (Join-Path $stage 'data')) -or (Test-Path -LiteralPath (Join-Path $stage 'exports'))) { throw 'Private records must not be packaged.' }
-$outputRoot = Join-Path $projectRoot 'release'
+Get-ChildItem -LiteralPath $stage -Filter '*.bat' | ForEach-Object {
+    $batchText = [IO.File]::ReadAllText($_.FullName) -replace '\r?\n', "`r`n"
+    [IO.File]::WriteAllText($_.FullName, $batchText, [Text.ASCIIEncoding]::new())
+}
+$outputRoot = Join-Path $projectRoot ('release/' + $Version)
 New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
 $zip = Join-Path $outputRoot 'flag-windows-x64.zip'
 if (Test-Path -LiteralPath $zip) { throw 'Release ZIP already exists. Move it before packaging a new release.' }

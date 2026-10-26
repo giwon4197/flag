@@ -2,6 +2,7 @@ import './style.css';
 import {FilesetResolver, PoseLandmarker} from '@mediapipe/tasks-vision';
 import {GameSession, readArms, roundDuration} from './game.js';
 import {openCamera} from './camera.js';
+import {AutoStartGesture} from './auto-start.js';
 
 const flag = color => `<span class="flag ${color}" aria-hidden="true"><i></i></span>`;
 document.querySelector('#app').innerHTML = `
@@ -31,11 +32,12 @@ document.querySelector('#app').innerHTML = `
     </div>
     <section id="command-panel" class="command-panel" hidden>
       <div id="level" class="eyebrow">READY TO PLAY</div>
-      <h2 id="command">준비되셨나요?</h2>
-      <p id="hint">양팔이 인식되면 게임을 시작할 수 있어요.</p>
+      <h2 id="command">양팔을 올리면 시작해요</h2>
+      <p id="hint">양팔을 올리고 3초 동안 유지해 주세요.</p>
+      <div id="auto-countdown" role="status" aria-live="polite" hidden></div>
       <div class="round-track"><div id="round-progress"></div></div>
       <div id="feedback" role="status" aria-live="polite"></div>
-      <button id="start" class="primary" disabled>게임 시작 <span>→</span></button>
+      <button id="start" class="primary" disabled>버튼으로 바로 시작 <span>→</span></button>
       <p id="start-note" class="start-note">2분 동안 도전 · 점수가 올라가도 시간은 그대로</p>
     </section>
   </section>
@@ -77,6 +79,8 @@ document.querySelector('#app').innerHTML = `
 const $ = s => document.querySelector(s);
 const video = $('video'), canvas = $('canvas'), ctx = canvas.getContext('2d');
 const game = new GameSession();
+const autoStart = new AutoStartGesture();
+let countdown=null, lastGestureAt=-Infinity;
 let detector, stream, frameId, lastVideoTime = -1, detecting = false, showSkeleton = true, tickId;
 let arms = {blue:'unknown',white:'unknown'}, visible = false;
 let bestScore = 0, startingBest = 0;
@@ -121,6 +125,7 @@ async function connect() {
   } finally { $('#connect').disabled = false; $('#connect').innerHTML = '카메라 연결하기 <span>↗</span>'; }
 }
 function disconnect() {
+  cancelAutoStart();
   detecting = false; cancelAnimationFrame(frameId);
   const old = stream; stream = null;
   old?.getTracks().forEach(t=>t.stop()); video.srcObject = null;
@@ -145,6 +150,7 @@ function detect() {
       arms = readArms(points);
       visible = arms.blue !== 'unknown' && arms.white !== 'unknown';
       game.observe(arms, performance.now()); updateArms();
+      updateAutoStart(performance.now());
       setStatus(visible ? 'LIVE · 양팔 인식 중' : '양쪽 어깨와 손목이 보이도록 위치를 조정해 주세요');
       canvas.width = video.videoWidth; canvas.height = video.videoHeight;
       ctx.clearRect(0,0,canvas.width,canvas.height);
@@ -186,10 +192,20 @@ function renderGame(now = performance.now()) {
   $('#command-panel').classList.toggle('miss', game.phase === 'feedback' && !game.lastSuccess);
   const active = ['command','feedback'].includes(game.phase);
   setText('#level', game.playing ? `LEVEL ${Math.floor(Math.max(0,game.round-1)/5)+1} · ${game.round}번째 지시` : 'READY TO PLAY');
-  setText('#command', active ? game.command.text : game.playing ? '양팔 위치를 확인하고 있어요' : game.phase === 'finished' ? '다시 도전해 볼까요?' : '준비되셨나요?');
-  setText('#hint', active ? '지시가 나온 뒤 팔을 움직이고, 0.35초 유지하세요' : '양팔을 올리거나 내린 자세로 잠깐 유지해 주세요');
+  setText('#command', active ? game.command.text : game.playing ? '양팔 위치를 확인하고 있어요' : countdown!==null ? '양팔을 올린 채 유지하세요' : '양팔을 올리면 시작해요');
+  setText('#hint', active ? '지시가 나온 뒤 팔을 움직이고, 0.35초 유지하세요' : game.playing ? '양팔을 올리거나 내린 자세로 잠깐 유지해 주세요' : autoStart.locked ? '양팔을 한번 내린 뒤 다시 올리면 3초 후 시작합니다' : '양팔을 올리고 3초 유지하면 자동으로 시작합니다');
+  $('#auto-countdown').hidden=countdown===null || game.playing;
+  setText('#auto-countdown',countdown===null?'':String(countdown));
   setText('#feedback', game.phase === 'feedback' ? game.lastSuccess ? '✓ 성공! 잘했어요' : '시간 초과 · 다음 동작에 도전해요' : '');
   $('#round-progress').style.width = `${game.phase === 'command' ? Math.max(0,(game.roundEnd-now)/(roundDuration(game.round-1)*1000)*100) : 0}%`;
+}
+function cancelAutoStart() {autoStart.reset();countdown=null;}
+function updateAutoStart(now) {
+  lastGestureAt=now;
+  const eligible=!!participant && !!stream && !game.playing && !pendingScore && !document.hidden && !document.querySelector('dialog[open]') && !document.activeElement?.matches('input,select,textarea');
+  const next=autoStart.update(arms,now,eligible);
+  if(next===0){countdown=null;start();return;}
+  if(next!==countdown){countdown=next;renderGame(now);}
 }
 function start() {
   if (!participant) { openRegistration(true); return; }
@@ -198,6 +214,7 @@ function start() {
   if (game.playing) return;
   startingBest = bestScore;
   if (!game.start(performance.now(),selectedDuration)) return;
+  autoStart.lock();countdown=null;
   previewTime=false;
   currentRunId = crypto.randomUUID();
   $('#result').close();
@@ -212,6 +229,7 @@ function finish() {
   game.finish(performance.now()); renderGame(); showResults();
 }
 function showResults() {
+  autoStart.lock();countdown=null;
   clearInterval(tickId);
   setText('#final-score', `${game.score.toLocaleString()}점`);
   setText('#final-detail', `성공 ${game.successes}회 · 시간 초과 ${game.misses}회 · 정확도 ${game.successes+game.misses ? Math.round(game.successes/(game.successes+game.misses)*100) : 0}%`);
@@ -233,6 +251,7 @@ async function api(path, data) {
 function openRegistration(startAfter = false) {
   if(game.playing || pendingScore)return;
   pendingStart = startAfter;
+  cancelAutoStart();
   $('#participant-form').reset();
   setText('#registration-error','');
   $('#registration').showModal();
@@ -279,10 +298,11 @@ async function loadLeaderboard() {
     setText('#leaderboard-status',entries.length?'':'아직 등록된 기록이 없습니다. 첫 기록에 도전해 보세요!');
   } catch(error) {setText('#leaderboard-status',error.message);}
 }
-function openLeaderboard() {$('#leaderboard').showModal();$('#leaderboard>p').textContent=`${selectedDuration}초 경기 · 학번별 최고 점수 TOP 20 · 동점이면 정확도 순`;void loadLeaderboard();}
+function openLeaderboard() {cancelAutoStart();$('#leaderboard').showModal();$('#leaderboard>p').textContent=`${selectedDuration}초 경기 · 학번별 최고 점수 TOP 20 · 동점이면 정확도 순`;void loadLeaderboard();}
 function nextParticipant() {
   if(game.playing || pendingScore)return;
   participant=null;
+  autoStart.arm();cancelAutoStart();
   previewTime=true;
   $('#result').close();
   $('#register').hidden=false;$('#connect').hidden=true;$('#participant-status').hidden=true;
@@ -301,7 +321,8 @@ $('#disconnect').onclick=disconnect;
 $('#again').onclick=()=>{ $('#result').close(); start(); };
 $('#close-result').onclick=()=>$('#result').close();
 $('#skeleton').onclick=()=>{showSkeleton=!showSkeleton;setText('#skeleton',`관절 표시 ${showSkeleton?'ON':'OFF'}`);$('#skeleton').setAttribute('aria-pressed',String(showSkeleton));if(!showSkeleton)ctx.clearRect(0,0,canvas.width,canvas.height);};
-document.addEventListener('visibilitychange',()=>{if(!document.hidden && game.playing)tick();});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){cancelAutoStart();renderGame();}else if(game.playing)tick();});
+setInterval(()=>{if(countdown!==null && performance.now()-lastGestureAt>=300){cancelAutoStart();renderGame();}},100);
 window.addEventListener('pagehide',()=>{stream?.getTracks().forEach(t=>t.stop());});
 renderGame();
 async function refreshBest() {
@@ -311,6 +332,7 @@ async function refreshBest() {
 $('#duration-seconds').onchange=()=>{
   const input=$('#duration-seconds');if(game.playing || !input.reportValidity()) {input.value=String(selectedDuration);return;}
   selectedDuration=Number(input.value);bestScore=0;startingBest=0;previewTime=true;
+  cancelAutoStart();
   try{localStorage.setItem('flag-duration-seconds',String(selectedDuration));}catch{}
   renderGame();void refreshBest();
 };
