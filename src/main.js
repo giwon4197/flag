@@ -172,15 +172,13 @@ function renderGame(now = performance.now()) {
   const remaining = previewTime ? selectedDuration : game.remaining(now);
   setText('#timer-label',`남은 시간 · ${game.playing ? game.durationSeconds : selectedDuration}초 도전`);
   $('#duration-seconds').disabled=game.playing;
-  setText('#start-note',`${selectedDuration}초 동안 도전 · 점수가 올라가도 시간은 그대로`);
+  setText('#start-note',`${selectedDuration}초 도전 · 정답 +100점부터 · 오동작 -50점 (최소 0점)`);
   setText('#time', `${Math.floor(remaining/60)}:${String(remaining%60).padStart(2,'0')}`);
   setText('#score', `${game.score}점`);
   setText('#combo', `${game.combo}회`);
-  if (game.durationSeconds === selectedDuration && game.score > bestScore) {
-    bestScore = game.score;
-  }
-  setText('#best-score', bestScore.toLocaleString());
-  setText('#record-note', bestScore > startingBest && game.score === bestScore ? '최고 기록 갱신!' : '현장 최고 기록');
+  const currentScore=game.durationSeconds===selectedDuration?game.score:0;
+  setText('#best-score', Math.max(bestScore,currentScore).toLocaleString());
+  setText('#record-note', currentScore>bestScore ? '최고 기록 갱신 중!' : '현장 최고 기록');
   $('#start').hidden = game.playing;
   $('#start-note').hidden = game.playing;
   $('#stop').hidden = !game.playing;
@@ -193,10 +191,10 @@ function renderGame(now = performance.now()) {
   const active = ['command','feedback'].includes(game.phase);
   setText('#level', game.playing ? `LEVEL ${Math.floor(Math.max(0,game.round-1)/5)+1} · ${game.round}번째 지시` : 'READY TO PLAY');
   setText('#command', active ? game.command.text : game.playing ? '양팔 위치를 확인하고 있어요' : countdown!==null ? '양팔을 올린 채 유지하세요' : '양팔을 올리면 시작해요');
-  setText('#hint', active ? '지시가 나온 뒤 팔을 움직이고, 0.35초 유지하세요' : game.playing ? '양팔을 올리거나 내린 자세로 잠깐 유지해 주세요' : autoStart.locked ? '양팔을 한번 내린 뒤 다시 올리면 3초 후 시작합니다' : '양팔을 올리고 3초 유지하면 자동으로 시작합니다');
+  setText('#hint', active ? '정답 자세 0.35초 유지 · 오동작 자세 0.5초 유지 시 -50점' : game.playing ? '양팔을 올리거나 내린 자세로 잠깐 유지해 주세요' : autoStart.locked ? '양팔을 한번 내린 뒤 다시 올리면 3초 후 시작합니다' : '양팔을 올리고 3초 유지하면 자동으로 시작합니다');
   $('#auto-countdown').hidden=countdown===null || game.playing;
   setText('#auto-countdown',countdown===null?'':String(countdown));
-  setText('#feedback', game.phase === 'feedback' ? game.lastSuccess ? '✓ 성공! 잘했어요' : '시간 초과 · 다음 동작에 도전해요' : '');
+  setText('#feedback', game.phase === 'feedback' ? game.lastSuccess ? '✓ 성공! 잘했어요' : game.lastFailure==='wrong' ? '오동작! -50점 · 연속 성공 초기화 (최소 0점)' : '시간 초과 · 다음 동작에 도전해요' : '');
   $('#round-progress').style.width = `${game.phase === 'command' ? Math.max(0,(game.roundEnd-now)/(roundDuration(game.round-1)*1000)*100) : 0}%`;
 }
 function cancelAutoStart() {autoStart.reset();countdown=null;}
@@ -232,11 +230,11 @@ function showResults() {
   autoStart.lock();countdown=null;
   clearInterval(tickId);
   setText('#final-score', `${game.score.toLocaleString()}점`);
-  setText('#final-detail', `성공 ${game.successes}회 · 시간 초과 ${game.misses}회 · 정확도 ${game.successes+game.misses ? Math.round(game.successes/(game.successes+game.misses)*100) : 0}%`);
+  setText('#final-detail', `성공 ${game.successes}회 · 오동작 ${game.wrongMoves}회 · 시간 초과 ${game.misses-game.wrongMoves}회 · 감점 ${game.penaltyPoints}점 · 정확도 ${game.successes+game.misses ? Math.round(game.successes/(game.successes+game.misses)*100) : 0}%`);
   setText('#final-record', game.score > startingBest ? '새로운 최고 기록을 세웠어요!' : `최고 기록 ${bestScore.toLocaleString()}점`);
   if (!$('#result').open) $('#result').showModal();
   if(currentRunId && participant && !pendingScore) {
-    pendingScore = {token:participant.token,runId:currentRunId,score:game.score,successes:game.successes,misses:game.misses,durationSeconds:game.durationSeconds};
+    pendingScore = {token:participant.token,runId:currentRunId,score:game.score,successes:game.successes,misses:game.misses,durationSeconds:game.durationSeconds,wrongMoves:game.wrongMoves,penaltyPoints:game.penaltyPoints};
     currentRunId = null;
     void saveScore();
   }
@@ -280,6 +278,7 @@ async function saveScore() {
   try {
     await api('/api/scores',pendingScore);
     pendingScore=null;
+    void refreshBest();
     setText('#save-status','리더보드에 기록을 저장했습니다.');
   } catch(error) {setText('#save-status',`기록 저장 실패: ${error.message}`);$('#retry-save').hidden=false;}
   finally {savingScore=false;$('#again').disabled=!!pendingScore;$('#next-participant').disabled=!!pendingScore;}
@@ -327,7 +326,7 @@ window.addEventListener('pagehide',()=>{stream?.getTracks().forEach(t=>t.stop())
 renderGame();
 async function refreshBest() {
   const duration=selectedDuration;
-  try {const {entries}=await api(`/api/leaderboard?durationSeconds=${duration}`);if(duration===selectedDuration){bestScore=Math.max(game.playing?game.score:0,entries[0]?.score || 0);renderGame();}}catch{}
+  try {const {entries}=await api(`/api/leaderboard?durationSeconds=${duration}`);if(duration===selectedDuration){bestScore=entries[0]?.score || 0;renderGame();}}catch{}
 }
 $('#duration-seconds').onchange=()=>{
   const input=$('#duration-seconds');if(game.playing || !input.reportValidity()) {input.value=String(selectedDuration);return;}

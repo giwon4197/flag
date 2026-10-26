@@ -1,4 +1,5 @@
 export const TOTAL_SECONDS = 120;
+export const WRONG_MOVE_PENALTY = 50;
 export function armState(shoulder, elbow, wrist) {
   if (![shoulder, elbow, wrist].every(p => p && (p.visibility ?? 0) >= .6)) return 'unknown';
   if (wrist.y < shoulder.y - .08) return 'up';
@@ -37,6 +38,7 @@ export class GameSession {
     this.playing = false;
     this.phase = 'ready';
     this.round = this.score = this.combo = this.successes = this.misses = 0;
+    this.wrongMoves = this.penaltyPoints = 0;
     this.arms = {blue:'unknown',white:'unknown'};
     this.lastPoseAt = -Infinity;
     this.stableSince = null;
@@ -48,6 +50,7 @@ export class GameSession {
     this.playing = true;
     this.phase = 'waiting';
     this.round = this.score = this.combo = this.successes = this.misses = 0;
+    this.wrongMoves = this.penaltyPoints = 0;
     this.command = null;
     // The session deadline is set only here, never when a command or record changes.
     this.endAt = now + this.durationSeconds * 1000;
@@ -75,6 +78,14 @@ export class GameSession {
       if (this.away[key] && arms[key] === this.command[key]) this.moved[key] = true;
     }
     const moved = ['blue','white'].every(k => !this.command[k] || this.moved[k]);
+    if(fresh && ['blue','white'].every(k=>arms[k]!=='unknown') && ['blue','white'].some(k=>arms[k]==='middle' || arms[k]!==this.initialArms[k]))this.hasMoved=true;
+    // Allow reaction time and ignore transitions. The initial waiting pose is
+    // not a wrong move. A new, definite wrong pose must persist on fresh frames.
+    if(fresh && definite && this.hasMoved && !matches(this.command,arms) && now-this.issuedAt>=800) {
+      const pose=arms.blue+':'+arms.white;
+      if(this.wrongSince==null || this.wrongPose!==pose){this.wrongSince=now;this.wrongPose=pose;}
+      else if(now-this.wrongSince>=500){this.settle(false,now,'wrong');return;}
+    } else {this.wrongSince=null;this.wrongPose=null;}
     if (!fresh || !moved || !matches(this.command, arms)) this.holdSince = null;
     else if (this.holdSince == null) this.holdSince = now;
     else if (now - this.holdSince >= 350) this.settle(true, now);
@@ -83,7 +94,7 @@ export class GameSession {
     if (!this.playing) return;
     if (now >= this.endAt) { this.finish(now); return; }
     if (this.phase === 'command') {
-      if (now - this.lastPoseAt >= 300) this.holdSince = null;
+      if (now - this.lastPoseAt >= 300) {this.holdSince = null;this.wrongSince=null;this.wrongPose=null;}
       if (now >= this.roundEnd) this.settle(false, now);
       return;
     }
@@ -93,6 +104,10 @@ export class GameSession {
     const command = nextCommand(this.round, this.command, this.arms, this.random);
     if (!command) return;
     this.command = command;
+    this.issuedAt=now;
+    this.initialArms={...this.arms};
+    this.hasMoved=false;
+    this.wrongSince=null;this.wrongPose=null;
     this.roundEnd = now + roundDuration(this.round) * 1000;
     this.round++;
     this.phase = 'command';
@@ -100,13 +115,22 @@ export class GameSession {
     this.moved = {blue:false,white:false};
     this.holdSince = null;
   }
-  settle(success, now) {
+  settle(success, now, reason='timeout') {
     if (!this.playing || this.phase !== 'command') return;
     if (success) {
       this.successes++;
       this.combo++;
       this.score += 100 + Math.min(this.combo - 1, 10) * 10;
-    } else { this.misses++; this.combo = 0; }
+    } else {
+      this.misses++; this.combo = 0;
+      if(reason==='wrong') {
+        this.wrongMoves++;
+        const deduction=Math.min(this.score,WRONG_MOVE_PENALTY);
+        this.score-=deduction;
+        this.penaltyPoints+=deduction;
+      }
+    }
+    this.lastFailure=success?null:reason;
     this.lastSuccess = success;
     this.phase = 'feedback';
     this.nextAt = now + 850;

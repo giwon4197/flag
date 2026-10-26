@@ -174,3 +174,50 @@ test('custom game duration is validated and cannot change during a running sessi
  game.tick(31000);assert.equal(game.phase,'finished');assert.equal(game.remaining(31000),0);
  game.start(40000,60);assert.equal(game.remaining(40000),60);
 });
+
+test('a wrong move held for half a second deducts 50 points once and resets the combo',()=>{
+ const game=sessionAtCommand({blue:'down',white:'down'});
+ game.score=100;game.combo=2;
+ // The command asks for white up, but the player raises blue instead.
+ assert.equal(game.command.white,'up');
+ for(const now of [400,500,600,700,800,900,1000,1100,1200,1300,1400])game.observe({blue:'up',white:'down'},now);
+ assert.equal(game.score,100);
+ game.observe({blue:'up',white:'down'},1500);
+ assert.equal(game.score,50);assert.equal(game.wrongMoves,1);assert.equal(game.penaltyPoints,50);
+ assert.equal(game.combo,0);assert.equal(game.misses,1);assert.equal(game.lastFailure,'wrong');
+ game.observe({blue:'up',white:'down'},1600);game.observe({blue:'up',white:'down'},1700);
+ assert.equal(game.score,50);assert.equal(game.misses,1);
+});
+
+test('waiting in the initial pose and timeout do not count as a wrong movement',()=>{
+ const game=sessionAtCommand({blue:'down',white:'down'});game.score=100;
+ for(let now=300;now<=5000;now+=100)game.observe({blue:'down',white:'down'},now);
+ assert.equal(game.score,100);assert.equal(game.wrongMoves,0);
+ game.tick(5200);assert.equal(game.lastFailure,'timeout');assert.equal(game.score,100);
+});
+
+test('transitioning or untracked poses do not receive a wrong-move penalty',()=>{
+ for(const arms of [{blue:'middle',white:'down'},{blue:'up',white:'unknown'}]){
+  const game=sessionAtCommand({blue:'down',white:'down'});game.score=100;
+  for(let now=300;now<=2000;now+=100)game.observe(arms,now);
+  assert.equal(game.score,100);assert.equal(game.wrongMoves,0);
+ }
+});
+
+test('a frozen or changed wrong pose cannot accumulate the half-second hold',()=>{
+ const game=sessionAtCommand({blue:'down',white:'down'});game.score=100;
+ for(let now=300;now<=1000;now+=100)game.observe({blue:'up',white:'down'},now);
+ game.tick(1600);assert.equal(game.wrongMoves,0);
+ game.observe({blue:'up',white:'down'},1700);game.observe({blue:'up',white:'down'},1800);
+ game.observe({blue:'middle',white:'down'},1900);
+ game.observe({blue:'up',white:'down'},2000);game.observe({blue:'up',white:'down'},2200);
+ assert.equal(game.score,100);assert.equal(game.wrongMoves,0);
+});
+
+test('wrong movement cannot reduce the score below zero and new games clear penalties',()=>{
+ const game=sessionAtCommand({blue:'down',white:'down'});game.score=20;
+ for(let now=300;now<=1500;now+=100)game.observe({blue:'up',white:'down'},now);
+ assert.equal(game.score,0);assert.equal(game.penaltyPoints,20);assert.equal(game.wrongMoves,1);
+ game.finish(1600);game.start(2000);
+ assert.equal(game.wrongMoves,0);assert.equal(game.penaltyPoints,0);
+});

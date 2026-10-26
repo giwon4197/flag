@@ -9,6 +9,18 @@ import {gifticonCsv} from './export-gifticon.mjs';
 
 const person={name:'테스트 참가자',studentId:'TEST-001',department:'테스트학과',phone:'000-0000-0000'};
 const run='00000000-0000-4000-8000-000000000001';
+test('penalized scores persist and invalid penalty totals are rejected',async t=>{
+ const {store,file}=await fixture(t);const p=await store.register(person);
+ const score={token:p.token,runId:run,score:50,successes:1,misses:1,wrongMoves:1,penaltyPoints:50};
+ await store.save(score);
+ const data=JSON.parse(await readFile(file,'utf8'));
+ assert.equal(data.scores[0].wrongMoves,1);assert.equal(data.scores[0].penaltyPoints,50);
+ assert.equal(store.list()[0].score,50);assert.equal(store.list()[0].accuracy,50);
+ assert.ok(gifticonCsv(data).includes('오동작 횟수'));
+ assert.throws(()=>store.save({...score,wrongMoves:0}));
+ assert.throws(()=>store.save({...score,penaltyPoints:100}));
+ assert.throws(()=>store.save({...score,score:-1}));
+});
 test('gifticon CSV includes private contact fields, preserves leading zeroes and escapes formulas',()=>{
  const csv=gifticonCsv({participants:[{...person,name:'=TEST',token:'demo',phone:'00000000000'}],scores:[{token:'demo',score:100,successes:1,misses:0}]});
  assert.ok(csv.startsWith('\uFEFF'));assert.ok(csv.includes('전화번호'));

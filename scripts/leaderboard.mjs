@@ -38,8 +38,9 @@ export async function createLeaderboard(file) {
       if (typeof input.token !== 'string' || typeof input.runId !== 'string' || !/^[\da-f-]{36}$/i.test(input.runId)) throw new Error('참가 정보를 다시 입력해 주세요.');
       const {score, successes, misses} = input;
       const durationSeconds = input.durationSeconds ?? 120;
+      const wrongMoves=input.wrongMoves ?? 0, penaltyPoints=input.penaltyPoints ?? 0;
       if(!Number.isInteger(durationSeconds) || durationSeconds<10 || durationSeconds>600)throw new Error('게임 시간은 10~600초로 설정해 주세요.');
-      if (![score,successes,misses].every(Number.isSafeInteger) || Math.min(score,successes,misses)<0 || successes+misses>1000 || score<successes*100 || score>successes*200) throw new Error('올바르지 않은 게임 기록입니다.');
+      if (![score,successes,misses,wrongMoves,penaltyPoints].every(Number.isSafeInteger) || Math.min(score,successes,misses,wrongMoves,penaltyPoints)<0 || successes+misses>1000 || wrongMoves>misses || penaltyPoints>wrongMoves*50 || score<Math.max(0,successes*100-penaltyPoints) || score>successes*200-penaltyPoints) throw new Error('올바르지 않은 게임 기록입니다.');
       return update(next => {
         if (!next.participants.some(p=>p.token===input.token)) throw new Error('참가 정보를 다시 입력해 주세요.');
         const previous = next.scores.find(s=>s.runId===input.runId);
@@ -47,7 +48,7 @@ export async function createLeaderboard(file) {
           if(previous.token!==input.token) throw new Error('올바르지 않은 게임 기록입니다.');
           return {saved:true};
         }
-        next.scores.push({token:input.token,runId:input.runId,score,successes,misses,durationSeconds,createdAt:new Date().toISOString()});
+        next.scores.push({token:input.token,runId:input.runId,score,successes,misses,durationSeconds,wrongMoves,penaltyPoints,createdAt:new Date().toISOString()});
         return {saved:true};
       });
     },

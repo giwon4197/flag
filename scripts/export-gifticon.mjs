@@ -21,11 +21,11 @@ export function gifticonCsv(state) {
     else if(/^[\s]*[=+@-]/.test(text))text="'"+text;
     return '"'+text.replaceAll('"','""')+'"';
   }
-  const rows=[['시간별 순위','경기 시간(초)','이름','학번','학과','전화번호','최고 점수','정확도(%)']];
+  const rows=[['시간별 순위','경기 시간(초)','이름','학번','학과','전화번호','최고 점수','정확도(%)','오동작 횟수','실제 감점']];
   let previousDuration=null,rank=0;
   for(const row of [...best.values()].sort((a,b)=>a.duration-b.duration || b.score-a.score || b.accuracy-a.accuracy)) {
     if(previousDuration!==row.duration){rank=0;previousDuration=row.duration;}
-    rows.push([++rank,row.duration,row.name,row.studentId,row.department,row.phone,row.score,row.accuracy]);
+    rows.push([++rank,row.duration,row.name,row.studentId,row.department,row.phone,row.score,row.accuracy,row.wrongMoves ?? 0,row.penaltyPoints ?? 0]);
   }
   return '\uFEFF'+rows.map((row,index)=>row.map((value,col)=>cell(value,index>0 && [3,5].includes(col))).join(',')).join('\r\n')+'\r\n';
 }
