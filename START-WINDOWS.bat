@@ -1,21 +1,21 @@
 @echo off
 setlocal
 cd /d "%~dp0"
+if exist "runtime\node.exe" (
+  runtime\node.exe scripts\serve.mjs --open
+  goto finished
+)
 where node >nul 2>nul
 if errorlevel 1 (
-  echo Node.js is required. Install the LTS version from https://nodejs.org/
-  echo Then double-click START-WINDOWS.bat again.
+  echo For no-install use, download flag-windows-x64.zip from:
+  echo https://github.com/giwon4197/flag/releases/latest
+  echo Or install Node.js 24 LTS from https://nodejs.org/
   pause
   exit /b 1
 )
-if not exist "dist\index.html" (
-  echo Preparing the game for first use...
-  call npm ci
-  if errorlevel 1 goto failed
-  call npm run build
-  if errorlevel 1 goto failed
-)
-node scripts\serve.mjs --open
+node scripts\launch.mjs
+if errorlevel 1 goto failed
+:finished
 pause
 exit /b
 :failed

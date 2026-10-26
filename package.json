@@ -1,9 +1,11 @@
 {
   "name": "blue-white-motion",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "scripts": {
+    "start": "node scripts/launch.mjs",
+    "export:gifticon": "node scripts/export-gifticon.mjs",
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",

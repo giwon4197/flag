@@ -3,12 +3,15 @@ import {readFile, stat} from 'node:fs/promises';
 import {dirname, resolve, sep, extname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawn} from 'node:child_process';
+import {createLeaderboard, handleLeaderboardApi} from './leaderboard.mjs';
 const root=resolve(dirname(fileURLToPath(import.meta.url)), '../dist');
+const leaderboard=await createLeaderboard(process.env.FLAG_DATA_FILE || resolve(root,'../data/leaderboard.json'));
 const mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.wasm':'application/wasm','.json':'application/json','.svg':'image/svg+xml','.task':'application/octet-stream'};
 try {await stat(resolve(root,'index.html'));} catch {console.error('Missing dist/index.html. Run npm ci and npm run build first.');process.exit(1);}
 const port=Number(process.env.FLAG_GAME_PORT || 5173);
 if(!Number.isInteger(port) || port<1 || port>65535)throw new Error('Invalid FLAG_GAME_PORT');
 const server=createServer(async(req,res)=>{
+ if(await handleLeaderboardApi(req,res,leaderboard))return;
  try {
   const pathname=decodeURIComponent(new URL(req.url,'http://localhost').pathname);
   const path=resolve(root,'.'+(pathname==='/'?'/index.html':pathname));
